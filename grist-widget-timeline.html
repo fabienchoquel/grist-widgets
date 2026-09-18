@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Timeline / Planning projet - Widget Grist</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root {
+    --border: #e2e4e8;
+    --text: #23272f;
+    --muted: #6b7280;
+    --bg: #ffffff;
+    --today: #ef4444;
+    --palette: #4f46e5,#0ea5e9,#10b981,#f59e0b,#ec4899,#8b5cf6,#14b8a6,#f97316;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    overflow: hidden;
+    height: 100%;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  #toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  #toolbar .zoom { display: flex; gap: 4px; }
+  #toolbar button {
+    border: 1px solid var(--border); background: #fff; border-radius: 6px;
+    padding: 4px 10px; font-size: 12.5px; cursor: pointer; color: var(--text);
+  }
+  #toolbar button:hover { background: #f3f4f6; }
+  #toolbar button.active { background: var(--text); color: #fff; border-color: var(--text); }
+  #empty { padding: 30px; color: var(--muted); font-size: 14px; text-align: center; }
+  #scroll { flex: 1; overflow: auto; position: relative; }
+  #grid { position: relative; min-width: 100%; }
+  .row-labels {
+    position: sticky; left: 0; z-index: 3; background: var(--bg);
+  }
+  .row-label {
+    height: 34px; display: flex; align-items: center; padding: 0 10px;
+    font-size: 12.5px; border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    background: var(--bg); position: sticky; left: 0;
+    width: 190px;
+  }
+  .group-header {
+    height: 28px; display: flex; align-items: center; padding: 0 10px;
+    font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .03em; color: var(--muted); background: #f8f9fb;
+    border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+    position: sticky; left: 0; width: 190px;
+  }
+  .chart-area { position: relative; }
+  .month-header {
+    display: flex; position: sticky; top: 0; z-index: 2; background: var(--bg);
+    border-bottom: 1px solid var(--border); height: 28px;
+  }
+  .month-cell {
+    border-right: 1px solid var(--border); font-size: 11px; color: var(--muted);
+    display: flex; align-items: center; padding-left: 6px; flex-shrink: 0;
+  }
+  .lane-row { position: relative; height: 34px; border-bottom: 1px solid var(--border); }
+  .lane-group-row { height: 28px; border-bottom: 1px solid var(--border); background: #f8f9fb; }
+  .day-col-bg { position: absolute; top: 0; bottom: 0; border-right: 1px solid #f0f1f3; }
+  .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--today); z-index: 1; }
+  .bar {
+    position: absolute; top: 5px; height: 24px; border-radius: 5px;
+    display: flex; align-items: center; padding: 0 8px; font-size: 11.5px;
+    color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.15);
+  }
+  .bar:hover { filter: brightness(1.08); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <div><strong style="font-size:13px;">Planning</strong></div>
+    <div class="zoom">
+      <button data-zoom="day">Jour</button>
+      <button data-zoom="week" class="active">Semaine</button>
+      <button data-zoom="month">Mois</button>
+    </div>
+  </div>
+  <div id="empty" style="display:none;">En attente de données…</div>
+  <div id="scroll"><div id="grid"></div></div>
+</div>
+
+<script>
+  const DAY = 86400000;
+  let records = [];
+  let zoom = 'week'; // day | week | month
+  const dayWidth = { day: 34, week: 14, month: 5 };
+  const colors = "#4f46e5,#0ea5e9,#10b981,#f59e0b,#ec4899,#8b5cf6,#14b8a6,#f97316".split(',');
+  const colorMap = {};
+  function colorFor(key) {
+    if (!key) return colors[0];
+    if (!colorMap[key]) colorMap[key] = colors[Object.keys(colorMap).length % colors.length];
+    return colorMap[key];
+  }
+
+  grist.ready({
+    requiredAccess: 'read table',
+    columns: [
+      { name: "Title", title: "Titre", type: "Text" },
+      { name: "Start", title: "Date de début", type: "Date" },
+      { name: "End", title: "Date de fin (optionnel, sinon = début)", type: "Date", optional: true },
+      { name: "Group", title: "Regroupement (ex: Projet)", type: "Text", optional: true },
+      { name: "Category", title: "Catégorie (couleur)", type: "Text", optional: true },
+    ]
+  });
+
+  grist.onRecords(function (data, mappings) {
+    const mapped = grist.mapColumnNames(data, mappings) || [];
+    records = mapped
+      .filter(r => r.Start)
+      .map(r => ({
+        id: r.id,
+        title: r.Title || '(Sans titre)',
+        start: toDate(r.Start),
+        end: toDate(r.End || r.Start),
+        group: r.Group || '',
+        category: r.Category || r.Group || ''
+      }));
+    render();
+  });
+
+  function toDate(v) {
+    // Grist envoie les dates comme timestamp en secondes (nombre)
+    if (typeof v === 'number') return new Date(v * 1000);
+    if (v instanceof Date) return v;
+    return new Date(v);
+  }
+
+  document.querySelectorAll('#toolbar button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#toolbar button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      zoom = btn.dataset.zoom;
+      render();
+    });
+  });
+
+  function render() {
+    const grid = document.getElementById('grid');
+    const empty = document.getElementById('empty');
+    if (!records.length) {
+      grid.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+
+    const w = dayWidth[zoom];
+    let minDate = new Date(Math.min(...records.map(r => r.start)));
+    let maxDate = new Date(Math.max(...records.map(r => r.end)));
+    minDate = startOfDay(new Date(minDate.getTime() - 3 * DAY));
+    maxDate = startOfDay(new Date(maxDate.getTime() + 5 * DAY));
+    const totalDays = Math.max(1, Math.round((maxDate - minDate) / DAY));
+    const chartWidth = totalDays * w;
+
+    // Regroupement
+    const groups = {};
+    records.forEach(r => {
+      const g = r.group || '—';
+      (groups[g] = groups[g] || []).push(r);
+    });
+    const groupNames = Object.keys(groups).sort();
+
+    // En-tête mois
+    let monthHtml = '';
+    let cursor = new Date(minDate);
+    while (cursor < maxDate) {
+      const nextMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+      const end = nextMonth < maxDate ? nextMonth : maxDate;
+      const days = Math.round((end - cursor) / DAY);
+      monthHtml += `<div class="month-cell" style="width:${days * w}px;">${cursor.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}</div>`;
+      cursor = end;
+    }
+
+    // Lignes
+    let labelsHtml = '';
+    let laneHtml = '';
+    groupNames.forEach(g => {
+      if (g !== '—' || groupNames.length > 1) {
+        labelsHtml += `<div class="group-header">${escapeHtml(g)}</div>`;
+        laneHtml += `<div class="lane-group-row" style="width:${chartWidth}px;"></div>`;
+      }
+      groups[g].forEach(r => {
+        labelsHtml += `<div class="row-label" title="${escapeHtml(r.title)}">${escapeHtml(r.title)}</div>`;
+        const left = Math.round((startOfDay(r.start) - minDate) / DAY) * w;
+        const dur = Math.max(1, Math.round((startOfDay(r.end) - startOfDay(r.start)) / DAY) + 1);
+        const width = dur * w;
+        laneHtml += `<div class="lane-row" style="width:${chartWidth}px;">
+          <div class="bar" style="left:${left}px; width:${Math.max(width, 10)}px; background:${colorFor(r.category)};" data-id="${r.id}" title="${escapeHtml(r.title)}">${escapeHtml(r.title)}</div>
+        </div>`;
+      });
+    });
+
+    const todayOffset = Math.round((startOfDay(new Date()) - minDate) / DAY) * w;
+    const todayLine = (todayOffset >= 0 && todayOffset <= chartWidth)
+      ? `<div class="today-line" style="left:${todayOffset}px;"></div>` : '';
+
+    grid.innerHTML = `
+      <div style="display:flex;">
+        <div class="row-labels">
+          <div class="month-header" style="width:190px;"></div>
+          ${labelsHtml}
+        </div>
+        <div class="chart-area" style="width:${chartWidth}px;">
+          <div class="month-header" style="width:${chartWidth}px;">${monthHtml}</div>
+          ${todayLine}
+          ${laneHtml}
+        </div>
+      </div>
+    `;
+
+    grid.querySelectorAll('.bar').forEach(el => {
+      el.addEventListener('click', () => {
+        const id = parseInt(el.dataset.id, 10);
+        grist.setCursorPos({ rowId: id }).catch(() => {});
+      });
+    });
+  }
+
+  function startOfDay(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Calendrier éditorial - Widget Grist</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root {
+    --border: #e2e4e8;
+    --text: #23272f;
+    --muted: #6b7280;
+    --bg: #ffffff;
+    --today-bg: #fef3c7;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text); background: var(--bg);
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  #toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  #toolbar .nav { display: flex; align-items: center; gap: 8px; }
+  #toolbar button {
+    border: 1px solid var(--border); background: #fff; border-radius: 6px;
+    padding: 4px 10px; font-size: 13px; cursor: pointer; color: var(--text);
+  }
+  #toolbar button:hover { background: #f3f4f6; }
+  #label { font-weight: 600; font-size: 14px; text-transform: capitalize; min-width: 150px; text-align: center; }
+  #legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
+  #legend span.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  #calendar { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #weekdays { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #weekdays div { padding: 6px 8px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; }
+  #weeks { flex: 1; display: grid; grid-auto-rows: 1fr; overflow: auto; }
+  .week { display: grid; grid-template-columns: repeat(7, 1fr); }
+  .day {
+    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    padding: 5px; min-height: 90px; position: relative; overflow: hidden;
+  }
+  .day.outside { background: #fafafa; color: #c7cad1; }
+  .day.today { background: var(--today-bg); }
+  .day .num { font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+  .post {
+    font-size: 11px; padding: 2px 5px; border-radius: 4px; color: #fff;
+    margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  .post:hover { filter: brightness(1.1); }
+  #empty { padding: 30px; color: var(--muted); font-size: 14px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <div class="nav">
+      <button id="prev">‹</button>
+      <div id="label"></div>
+      <button id="next">›</button>
+      <button id="today">Aujourd'hui</button>
+    </div>
+    <div id="legend"></div>
+  </div>
+  <div id="empty" style="display:none;">En attente de données…</div>
+  <div id="calendar" style="display:none;">
+    <div id="weekdays">
+      <div>Lun</div><div>Mar</div><div>Mer</div><div>Jeu</div><div>Ven</div><div>Sam</div><div>Dim</div>
+    </div>
+    <div id="weeks"></div>
+  </div>
+</div>
+
+<script>
+  let records = [];
+  let cursorMonth = new Date();
+  cursorMonth.setDate(1);
+
+  const colors = "#4f46e5,#0ea5e9,#10b981,#f59e0b,#ec4899,#8b5cf6,#14b8a6,#f97316".split(',');
+  const colorMap = {};
+  function colorFor(key) {
+    const k = key || '—';
+    if (!colorMap[k]) colorMap[k] = colors[Object.keys(colorMap).length % colors.length];
+    return colorMap[k];
+  }
+
+  grist.ready({
+    requiredAccess: 'read table',
+    columns: [
+      { name: "Title", title: "Titre du post", type: "Text" },
+      { name: "Date", title: "Date de publication", type: "Date" },
+      { name: "Category", title: "Plateforme / Catégorie (couleur)", type: "Text", optional: true },
+      { name: "Status", title: "Statut (optionnel)", type: "Text", optional: true },
+    ]
+  });
+
+  grist.onRecords(function (data, mappings) {
+    const mapped = grist.mapColumnNames(data, mappings) || [];
+    records = mapped
+      .filter(r => r.Date)
+      .map(r => ({
+        id: r.id,
+        title: r.Title || '(Sans titre)',
+        date: toDate(r.Date),
+        category: r.Category || '',
+        status: r.Status || ''
+      }));
+    document.getElementById('calendar').style.display = records.length ? 'flex' : 'none';
+    document.getElementById('empty').style.display = records.length ? 'none' : 'block';
+    render();
+  });
+
+  function toDate(v) {
+    if (typeof v === 'number') return new Date(v * 1000);
+    if (v instanceof Date) return v;
+    return new Date(v);
+  }
+
+  document.getElementById('prev').addEventListener('click', () => { cursorMonth.setMonth(cursorMonth.getMonth() - 1); render(); });
+  document.getElementById('next').addEventListener('click', () => { cursorMonth.setMonth(cursorMonth.getMonth() + 1); render(); });
+  document.getElementById('today').addEventListener('click', () => { cursorMonth = new Date(); cursorMonth.setDate(1); render(); });
+
+  function sameDay(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  function render() {
+    document.getElementById('label').textContent = cursorMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+
+    const year = cursorMonth.getFullYear();
+    const month = cursorMonth.getMonth();
+    const firstOfMonth = new Date(year, month, 1);
+    // Lundi = début de semaine
+    const startOffset = (firstOfMonth.getDay() + 6) % 7;
+    const gridStart = new Date(year, month, 1 - startOffset);
+
+    const weeksEl = document.getElementById('weeks');
+    weeksEl.innerHTML = '';
+    const today = new Date();
+
+    for (let w = 0; w < 6; w++) {
+      const weekEl = document.createElement('div');
+      weekEl.className = 'week';
+      let hasDayInMonth = false;
+      for (let d = 0; d < 7; d++) {
+        const dayDate = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + w * 7 + d);
+        const isOutside = dayDate.getMonth() !== month;
+        if (!isOutside) hasDayInMonth = true;
+        const dayEl = document.createElement('div');
+        dayEl.className = 'day' + (isOutside ? ' outside' : '') + (sameDay(dayDate, today) ? ' today' : '');
+        const num = document.createElement('div');
+        num.className = 'num';
+        num.textContent = dayDate.getDate();
+        dayEl.appendChild(num);
+
+        records.filter(r => sameDay(r.date, dayDate)).forEach(r => {
+          const postEl = document.createElement('div');
+          postEl.className = 'post';
+          postEl.style.background = colorFor(r.category);
+          postEl.textContent = r.title;
+          postEl.title = r.title + (r.status ? ' — ' + r.status : '');
+          postEl.addEventListener('click', () => grist.setCursorPos({ rowId: r.id }).catch(() => {}));
+          dayEl.appendChild(postEl);
+        });
+
+        weekEl.appendChild(dayEl);
+      }
+      weeksEl.appendChild(weekEl);
+      if (w >= 4 && !hasDayInMonth) break;
+    }
+
+    // Légende
+    const legend = document.getElementById('legend');
+    legend.innerHTML = '';
+    Object.keys(colorMap).forEach(k => {
+      const item = document.createElement('span');
+      item.innerHTML = `<span class="dot" style="background:${colorMap[k]}"></span>${k}`;
+      legend.appendChild(item);
+    });
+  }
+</script>
+</body>
+</html>
