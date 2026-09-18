@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Projets — Grist</title>
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --card: #ffffff;
+      --text: #252525;
+      --muted: #70757d;
+      --line: #e6e8eb;
+      --accent: #3f966d;
+      --accent-soft: #e2f1e9;
+      --blue: #2f72c8;
+      --blue-soft: #e3effc;
+      --shadow: 0 2px 12px rgba(25, 35, 45, .07);
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app { padding: 18px; }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(150px, .8fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .search, select {
+      width: 100%;
+      height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: #fff;
+      color: var(--text);
+      padding: 0 13px;
+      outline: none;
+      font: inherit;
+    }
+    .search:focus, select:focus {
+      border-color: #b7c8dd;
+      box-shadow: 0 0 0 3px rgba(47,114,200,.10);
+    }
+    .search-wrap { position: relative; }
+    .search-wrap span {
+      position: absolute;
+      left: 13px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #9aa0a6;
+      pointer-events: none;
+    }
+    .search { padding-left: 38px; }
+
+    .meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0 2px 12px;
+    }
+    .reset {
+      border: 0;
+      background: transparent;
+      color: var(--blue);
+      cursor: pointer;
+      font: inherit;
+      padding: 4px 0;
+    }
+    .reset:hover { text-decoration: underline; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 17px;
+      cursor: pointer;
+      transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+      min-height: 180px;
+    }
+    .card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 5px 18px rgba(25, 35, 45, .10);
+      border-color: #d9dde2;
+    }
+    .card:focus-visible {
+      outline: 3px solid rgba(47,114,200,.20);
+      outline-offset: 2px;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .title {
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.25;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .status {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: #294b72;
+      font-size: 12px;
+      font-weight: 600;
+      max-width: 48%;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--blue);
+      flex: 0 0 auto;
+    }
+
+    .hours {
+      display: flex;
+      align-items: baseline;
+      gap: 7px;
+      margin: 7px 0 18px;
+    }
+    .hours strong { font-size: 27px; line-height: 1; }
+    .hours span { color: var(--muted); font-size: 13px; }
+
+    .bar {
+      height: 7px;
+      background: #edf0f2;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 17px;
+    }
+    .bar > i {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: var(--accent);
+      border-radius: inherit;
+      transition: width .2s ease;
+    }
+
+    .details {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 5px 9px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: #555b63;
+      background: #fafbfc;
+      font-size: 12px;
+      max-width: 100%;
+    }
+    .tag strong { color: #33373c; margin-right: 4px; }
+
+    .empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+      background: #fff;
+      border: 1px dashed var(--line);
+      border-radius: var(--radius);
+    }
+    .empty strong { display: block; color: var(--text); margin-bottom: 5px; }
+
+    .loading { padding: 50px 20px; text-align: center; color: var(--muted); }
+
+    @media (max-width: 850px) {
+      .toolbar { grid-template-columns: 1fr 1fr; }
+      .search-wrap { grid-column: 1 / -1; }
+    }
+    @media (max-width: 500px) {
+      .app { padding: 12px; }
+      .toolbar { grid-template-columns: 1fr; }
+      .search-wrap { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="toolbar">
+      <div class="search-wrap">
+        <span>⌕</span>
+        <input id="search" class="search" type="search" placeholder="Rechercher un projet…" autocomplete="off" />
+      </div>
+      <select id="statusFilter"><option value="">Tous les statuts</option></select>
+      <select id="teamFilter"><option value="">Toutes les équipes</option></select>
+      <select id="brandFilter"><option value="">Toutes les marques</option></select>
+    </div>
+
+    <div class="meta">
+      <span id="count">Chargement…</span>
+      <button id="reset" class="reset" type="button">Réinitialiser les filtres</button>
+    </div>
+
+    <section id="grid" class="grid">
+      <div class="loading">Chargement des projets…</div>
+    </section>
+  </main>
+
+  <script>
+    const state = { records: [], mappings: null };
+
+    const $ = (id) => document.getElementById(id);
+    const search = $("search");
+    const statusFilter = $("statusFilter");
+    const teamFilter = $("teamFilter");
+    const brandFilter = $("brandFilter");
+    const grid = $("grid");
+    const count = $("count");
+    const reset = $("reset");
+
+    // Les 5 champs sont demandés à Grist. Les noms ci-dessous sont des noms
+    // internes au widget : l'utilisateur choisit ensuite les vraies colonnes.
+    grist.ready({
+      requiredAccess: "read table",
+      allowSelectBy: true,
+      columns: [
+        { name: "projectName", title: "Nom du projet", type: "Text", optional: false },
+        { name: "status", title: "Statut", type: "Text,Choice", optional: false },
+        { name: "hours", title: "Nombre d'heures", type: "Numeric,Int", optional: false },
+        { name: "team", title: "Équipe qui s'en occupe", type: "Any", optional: true },
+        { name: "brand", title: "Marque associée", type: "Any", optional: true }
+      ]
+    });
+
+    function flattenValue(value) {
+      if (value == null || value === "") return "";
+      if (Array.isArray(value)) {
+        // ChoiceList / RefList : on affiche les valeurs lisibles séparées par des virgules.
+        return value.map(flattenValue).filter(Boolean).join(", ");
+      }
+      if (typeof value === "object") {
+        if ("label" in value) return flattenValue(value.label);
+        if ("name" in value) return flattenValue(value.name);
+        return Object.values(value).map(flattenValue).filter(Boolean).join(", ");
+      }
+      return String(value);
+    }
+
+    function numberValue(value) {
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+      const s = flattenValue(value).replace(/\s/g, "").replace(",", ".");
+      const n = Number(s);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function normalize(record) {
+      const mapped = grist.mapColumnNames(record);
+      if (!mapped) return null;
+      return {
+        id: record.id ?? record.ID ?? record._grist_RowId,
+        projectName: flattenValue(mapped.projectName),
+        status: flattenValue(mapped.status),
+        hours: numberValue(mapped.hours),
+        team: flattenValue(mapped.team),
+        brand: flattenValue(mapped.brand)
+      };
+    }
+
+    function uniqueSorted(field) {
+      return [...new Set(state.records.map(r => r[field]).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
+    }
+
+    function fillSelect(select, values, emptyLabel) {
+      const current = select.value;
+      select.innerHTML = "";
+      const first = document.createElement("option");
+      first.value = "";
+      first.textContent = emptyLabel;
+      select.appendChild(first);
+      values.forEach(value => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value;
+        select.appendChild(option);
+      });
+      if (values.includes(current)) select.value = current;
+    }
+
+    function statusClass(status) {
+      return status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    }
+
+    function render() {
+      const q = search.value.trim().toLocaleLowerCase("fr");
+      const selectedStatus = statusFilter.value;
+      const selectedTeam = teamFilter.value;
+      const selectedBrand = brandFilter.value;
+
+      const filtered = state.records.filter(r => {
+        const haystack = [r.projectName, r.status, r.team, r.brand].join(" ").toLocaleLowerCase("fr");
+        return (!q || haystack.includes(q))
+          && (!selectedStatus || r.status === selectedStatus)
+          && (!selectedTeam || r.team === selectedTeam)
+          && (!selectedBrand || r.brand === selectedBrand);
+      });
+
+      count.textContent = `${filtered.length} projet${filtered.length > 1 ? "s" : ""}`;
+      grid.innerHTML = "";
+
+      if (!filtered.length) {
+        grid.innerHTML = `<div class="empty"><strong>Aucun projet trouvé</strong><span>Modifiez votre recherche ou vos filtres.</span></div>`;
+        return;
+      }
+
+      const frag = document.createDocumentFragment();
+      filtered.forEach(project => {
+        const card = document.createElement("article");
+        card.className = "card";
+        card.tabIndex = 0;
+        card.setAttribute("role", "button");
+        card.setAttribute("aria-label", `Ouvrir ${project.projectName || "le projet"}`);
+
+        const hoursText = project.hours == null ? "—" : new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(project.hours);
+        // La barre représente une progression visuelle simple. Elle est plafonnée à 100%.
+        // Si vos heures sont un budget/une capacité, on peut ensuite remplacer ce calcul
+        // par une vraie colonne "% d'avancement".
+        const progress = project.hours == null ? 0 : Math.min(100, Math.max(0, project.hours));
+
+        card.innerHTML = `
+          <div class="card-head">
+            <h2 class="title"></h2>
+            <span class="status"><i class="status-dot"></i><span class="status-text"></span></span>
+          </div>
+          <div class="hours"><strong>${hoursText}</strong><span>heures</span></div>
+          <div class="bar" aria-hidden="true"><i style="width:${progress}%"></i></div>
+          <div class="details"></div>
+        `;
+
+        card.querySelector(".title").textContent = project.projectName || "Projet sans nom";
+        card.querySelector(".status-text").textContent = project.status || "Sans statut";
+        const details = card.querySelector(".details");
+
+        if (project.team) {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.innerHTML = `<strong>Équipe</strong>`;
+          const text = document.createTextNode(project.team);
+          tag.appendChild(text);
+          details.appendChild(tag);
+        }
+        if (project.brand) {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.innerHTML = `<strong>Marque</strong>`;
+          tag.appendChild(document.createTextNode(project.brand));
+          details.appendChild(tag);
+        }
+
+        const selectRow = () => {
+          if (project.id != null) grist.setCursorPos({ rowId: project.id });
+        };
+        card.addEventListener("click", selectRow);
+        card.addEventListener("keydown", e => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectRow(); }
+        });
+        frag.appendChild(card);
+      });
+      grid.appendChild(frag);
+    }
+
+    function updateFilters() {
+      fillSelect(statusFilter, uniqueSorted("status"), "Tous les statuts");
+      fillSelect(teamFilter, uniqueSorted("team"), "Toutes les équipes");
+      fillSelect(brandFilter, uniqueSorted("brand"), "Toutes les marques");
+    }
+
+    function updateRecords(records, mappings) {
+      state.mappings = mappings;
+      state.records = records.map(normalize).filter(Boolean);
+      updateFilters();
+      render();
+    }
+
+    [search, statusFilter, teamFilter, brandFilter].forEach(el => {
+      el.addEventListener("input", render);
+      el.addEventListener("change", render);
+    });
+
+    reset.addEventListener("click", () => {
+      search.value = "";
+      statusFilter.value = "";
+      teamFilter.value = "";
+      brandFilter.value = "";
+      render();
+    });
+
+    grist.onRecords(updateRecords);
+  </script>
+</body>
+</html>
